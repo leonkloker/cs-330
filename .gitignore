@@ -1,1 +1,6 @@
 python-env/
+**/**.zip
+**/omniglot**
+**/movielens**
+**/__pycache__/
+**/state**

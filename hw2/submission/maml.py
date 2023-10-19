@@ -180,7 +180,7 @@ class MAML:
             k: torch.clone(v)
             for k, v in self._meta_parameters.items()
         }
-        gradients = None
+        gradients = []
         ### START CODE HERE ###
         # TODO: finish implementing this method.
         # This method computes the inner loop (adaptation) procedure
@@ -190,6 +190,18 @@ class MAML:
         # Use F.cross_entropy to compute classification losses.
         # Use util.score to compute accuracies.
         
+        for i in range(self._num_inner_steps):
+            logits = self._forward(images, parameters)
+            probabilities = F.softmax(logits, dim=1)
+            accuracies.append(util.score(probabilities, labels))
+            loss = F.cross_entropy(probabilities, labels)
+            gradients.append(autograd.grad(loss, parameters.values(), retain_graph=train))
+            for i, (k, v) in enumerate(parameters.items()):
+                parameters[k] = v - self._inner_lrs[k] * gradients[-1][i]
+
+        logits = self._forward(images, parameters)
+        probabilities = F.softmax(logits, dim=1)
+        accuracies.append(util.score(probabilities, labels))
 
         ### END CODE HERE ###
         return parameters, accuracies, gradients
@@ -230,6 +242,16 @@ class MAML:
             # and accuracy_query_batch.
             # support accuracy: The first element (index 0) should be the accuracy before any steps are taken.
             
+            parameters, accuracies_support, _ = self._inner_loop(images_support, labels_support, train)
+            logits = self._forward(images_query, parameters)
+            probabilities = F.softmax(logits, dim=1)
+            accuracy_query = util.score(probabilities, labels_query)
+            loss = F.cross_entropy(probabilities, labels_query)
+
+            outer_loss_batch.append(loss)
+            accuracies_support_batch.append(accuracies_support)
+            accuracy_query_batch.append(accuracy_query)
+
             ### END CODE HERE ###
         outer_loss = torch.mean(torch.stack(outer_loss_batch))
         accuracies_support = np.mean(
@@ -410,10 +432,10 @@ def main(args):
 
     if args.device == "gpu" and torch.backends.mps.is_available() and torch.backends.mps.is_built():
         # on MPS the derivative for aten::linear_backward is not implemented ... Waiting for PyTorch 2.1.0
-        # DEVICE = "mps"
+        DEVICE = "mps"
 
         # Due to the above, default for now to cpu
-        DEVICE = "cpu"
+        # DEVICE = "cpu"
     elif args.device == "gpu" and torch.cuda.is_available():
         DEVICE = "cuda"
     else:

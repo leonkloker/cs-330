@@ -318,9 +318,7 @@ class StudentTestResult(unittest.TestResult):
 
   def stopTestRun(self):
     if not use_solution:
-      self.stream.write('Note that the hidden test cases do not check for correctness.\n')
-      self.stream.write('They are provided for you to verify that the functions do not crash and run within the time limit.\n')
-      self.stream.write('Points for these parts not assigned by the grader unless the solution is present (indicated by "???").\n')
+      self.stream.write('Note that the hidden test cases are not shown here to check for correctness.\n')
     self.stream.write(f'========== END GRADING [{self.earned_points}/{self.max_points} points + {self.earned_extra_credit}/{self.max_extra_credit} extra credit]\n')
 
   def startTest(self, test):
