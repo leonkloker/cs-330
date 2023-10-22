@@ -196,8 +196,10 @@ class MAML:
             accuracies.append(util.score(probabilities, labels))
             loss = F.cross_entropy(probabilities, labels)
             gradients.append(autograd.grad(loss, parameters.values(), retain_graph=train))
-            for i, (k, v) in enumerate(parameters.items()):
-                parameters[k] = v - self._inner_lrs[k] * gradients[-1][i]
+            
+            if train:
+                for i, (k, v) in enumerate(parameters.items()):
+                    parameters[k] = v - self._inner_lrs[k] * gradients[-1][i]
 
         logits = self._forward(images, parameters)
         probabilities = F.softmax(logits, dim=1)
