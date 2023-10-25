@@ -171,21 +171,17 @@ class ProtoNet:
             difference_support = []
 
             for i in range(latent_query.shape[0]):
-                difference_query.append(torch.norm(prototypes - latent_query[i], dim=1))
+                difference_query.append(torch.square(torch.norm(prototypes - latent_query[i], dim=1)))
             for i in range(latent_support.shape[0]):
-                difference_support.append(torch.norm(prototypes - latent_support[i], dim=1))
+                difference_support.append(torch.square(torch.norm(prototypes - latent_support[i], dim=1)))
 
-            difference_query = torch.stack(difference_query)
-            difference_support = torch.stack(difference_support)
-            
-            # Calculate probabilities
-            probabilities_query = torch.softmax(-difference_query, dim=1)
-            probabilities_support = torch.softmax(-difference_support, dim=1)
+            difference_query = -torch.stack(difference_query)
+            difference_support = -torch.stack(difference_support)
             
             # Compute loss
-            loss_batch.append(F.cross_entropy(probabilities_query, labels_query))
-            accuracy_query_batch.append(util.score(probabilities_query, labels_query))
-            accuracy_support_batch.append(util.score(probabilities_support, labels_support))
+            loss_batch.append(F.cross_entropy(difference_query, labels_query))
+            accuracy_query_batch.append(util.score(difference_query, labels_query))
+            accuracy_support_batch.append(util.score(difference_support, labels_support))
             ### END CODE HERE ###
         return (
             torch.mean(torch.stack(loss_batch)),

@@ -180,7 +180,7 @@ class MAML:
             k: torch.clone(v)
             for k, v in self._meta_parameters.items()
         }
-        gradients = []
+        gradients = None
         ### START CODE HERE ###
         # TODO: finish implementing this method.
         # This method computes the inner loop (adaptation) procedure
@@ -192,16 +192,14 @@ class MAML:
         
         for i in range(self._num_inner_steps):
             logits = self._forward(images, parameters)
-            probabilities = F.softmax(logits, dim=1)
-            accuracies.append(util.score(probabilities, labels))
-            loss = F.cross_entropy(probabilities, labels)
-            gradients.append(autograd.grad(loss, parameters.values(), retain_graph=train))
+            accuracies.append(util.score(logits, labels))
+            loss = F.cross_entropy(logits, labels)
+            gradients = autograd.grad(loss, parameters.values(), create_graph=train)
             for i, (k, v) in enumerate(parameters.items()):
-                parameters[k] = v - self._inner_lrs[k] * gradients[-1][i]
+                parameters[k] = v - self._inner_lrs[k] * gradients[i]
 
         logits = self._forward(images, parameters)
-        probabilities = F.softmax(logits, dim=1)
-        accuracies.append(util.score(probabilities, labels))
+        accuracies.append(util.score(logits, labels))
 
         ### END CODE HERE ###
         return parameters, accuracies, gradients
@@ -244,9 +242,8 @@ class MAML:
             
             parameters, accuracies_support, _ = self._inner_loop(images_support, labels_support, train)
             logits = self._forward(images_query, parameters)
-            probabilities = F.softmax(logits, dim=1)
-            accuracy_query = util.score(probabilities, labels_query)
-            loss = F.cross_entropy(probabilities, labels_query)
+            accuracy_query = util.score(logits, labels_query)
+            loss = F.cross_entropy(logits, labels_query)
 
             outer_loss_batch.append(loss)
             accuracies_support_batch.append(accuracies_support)
