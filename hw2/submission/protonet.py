@@ -135,9 +135,7 @@ class ProtoNet:
         accuracy_support_batch = []
         accuracy_query_batch = []
         for i, task in enumerate(task_batch):
-            # print(i)
             images_support, labels_support, images_query, labels_query = task
-            # print(images_support.shape, labels_support.shape, images_query.shape, labels_query.shape)
             images_support = images_support.to(self.device)
             labels_support = labels_support.to(self.device)
             images_query = images_query.to(self.device)
@@ -152,7 +150,7 @@ class ProtoNet:
             # accuracy_query_batch.
 
             # compute prototypes without tracking gradients
-                # Generate support features
+            # Generate support features
             with torch.no_grad():
                 latent_support = self._network(images_support)
 
