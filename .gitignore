@@ -4,3 +4,6 @@ python-env/
 **/movielens**
 **/__pycache__/
 **/state**
+**/results**
+*.pth
+*.npz
