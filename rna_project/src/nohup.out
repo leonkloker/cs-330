@@ -1,86 +1,53 @@
-Traceback (most recent call last):
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torchinfo/torchinfo.py", line 295, in forward_pass
-    _ = model(*x, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1568, in _call_impl
-    result = forward_call(*args, **kwargs)
-TypeError: forward() takes 2 positional arguments but 3 were given
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "train_cnn.py", line 51, in <module>
-    model_info = summary(model, input_size=[(BATCH_SIZE, 200, DIMENSIONS[0]), (BATCH_SIZE, 200, DIMENSIONS[0])])
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torchinfo/torchinfo.py", line 223, in summary
-    summary_list = forward_pass(
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torchinfo/torchinfo.py", line 304, in forward_pass
-    raise RuntimeError(
-RuntimeError: Failed to run torchinfo. See above stack traces for more details. Executed layers up to: []
-Traceback (most recent call last):
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torchinfo/torchinfo.py", line 295, in forward_pass
-    _ = model(*x, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1568, in _call_impl
-    result = forward_call(*args, **kwargs)
-  File "/home/jswomley/DasRNA/leon/src/models/cnn.py", line 24, in forward
-    x = layer(x)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1568, in _call_impl
-    result = forward_call(*args, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/conv.py", line 310, in forward
-    return self._conv_forward(input, self.weight, self.bias)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/conv.py", line 306, in _conv_forward
-    return F.conv1d(input, weight, bias, self.stride,
-RuntimeError: Given groups=1, weight of size [256, 512, 3], expected input[256, 640, 200] to have 512 channels, but got 640 channels instead
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "train_cnn.py", line 51, in <module>
-    model_info = summary(model, input_size=(BATCH_SIZE, 200, DIMENSIONS[0]))
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torchinfo/torchinfo.py", line 223, in summary
-    summary_list = forward_pass(
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torchinfo/torchinfo.py", line 304, in forward_pass
-    raise RuntimeError(
-RuntimeError: Failed to run torchinfo. See above stack traces for more details. Executed layers up to: [GELU: 1]
 ==========================================================================================
 Layer (type:depth-idx)                   Output Shape              Param #
 ==========================================================================================
-Conv1DModel                              [256, 200, 1]             --
-├─ModuleList: 1-9                        --                        (recursive)
-│    └─Conv1d: 2-1                       [256, 512, 200]           983,552
-├─GELU: 1-2                              [256, 512, 200]           --
-├─ModuleList: 1-9                        --                        (recursive)
-│    └─Conv1d: 2-2                       [256, 256, 200]           393,472
-├─GELU: 1-4                              [256, 256, 200]           --
-├─ModuleList: 1-9                        --                        (recursive)
-│    └─Conv1d: 2-3                       [256, 128, 200]           98,432
-├─GELU: 1-6                              [256, 128, 200]           --
-├─ModuleList: 1-9                        --                        (recursive)
-│    └─Conv1d: 2-4                       [256, 64, 200]            24,640
-├─GELU: 1-8                              [256, 64, 200]            --
-├─ModuleList: 1-9                        --                        (recursive)
-│    └─Conv1d: 2-5                       [256, 1, 200]             193
-│    └─Sigmoid: 2-6                      [256, 1, 200]             --
+GRU                                      [128, 200, 1]             --
+├─GRU: 1-1                               [128, 200, 512]           4,927,488
+├─Conv1DModel: 1-2                       [128, 200, 1]             --
+│    └─ModuleList: 2-7                   --                        (recursive)
+│    │    └─Conv1d: 3-1                  [128, 256, 200]           393,472
+│    └─GELU: 2-2                         [128, 256, 200]           --
+│    └─ModuleList: 2-7                   --                        (recursive)
+│    │    └─Conv1d: 3-2                  [128, 64, 200]            49,216
+│    └─GELU: 2-4                         [128, 64, 200]            --
+│    └─ModuleList: 2-7                   --                        (recursive)
+│    │    └─Conv1d: 3-3                  [128, 16, 200]            3,088
+│    └─GELU: 2-6                         [128, 16, 200]            --
+│    └─ModuleList: 2-7                   --                        (recursive)
+│    │    └─Conv1d: 3-4                  [128, 1, 200]             49
+│    │    └─Sigmoid: 3-5                 [128, 1, 200]             --
 ==========================================================================================
-Total params: 1,500,289
-Trainable params: 1,500,289
+Total params: 5,373,313
+Trainable params: 5,373,313
 Non-trainable params: 0
-Total mult-adds (G): 76.81
+Total mult-adds (G): 137.56
 ==========================================================================================
-Input size (MB): 131.07
-Forward/backward pass size (MB): 393.63
-Params size (MB): 6.00
-Estimated Total Size (MB): 530.70
+Input size (MB): 65.54
+Forward/backward pass size (MB): 173.88
+Params size (MB): 21.49
+Estimated Total Size (MB): 260.90
 ==========================================================================================
 Traceback (most recent call last):
-  File "train_cnn.py", line 68, in <module>
-    yhat = model(x, x).squeeze(-1)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1527, in _call_impl
-    return forward_call(*args, **kwargs)
-TypeError: forward() takes 2 positional arguments but 3 were given
+  File "train_gru.py", line 65, in <module>
+    for x, y1, y2 in dataloader_train:
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/dataloader.py", line 630, in __next__
+    data = self._next_data()
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/dataloader.py", line 674, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/fetch.py", line 54, in fetch
+    return self.collate_fn(data)
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 265, in default_collate
+    return collate(batch, collate_fn_map=default_collate_fn_map)
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 142, in collate
+    return [collate(samples, collate_fn_map=collate_fn_map) for samples in transposed]  # Backwards compatibility.
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 142, in <listcomp>
+    return [collate(samples, collate_fn_map=collate_fn_map) for samples in transposed]  # Backwards compatibility.
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 119, in collate
+    return collate_fn_map[elem_type](batch, collate_fn_map=collate_fn_map)
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 171, in collate_numpy_array_fn
+    return collate([torch.as_tensor(b) for b in batch], collate_fn_map=collate_fn_map)
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 119, in collate
+    return collate_fn_map[elem_type](batch, collate_fn_map=collate_fn_map)
+  File "/home/jswomley/.local/lib/python3.8/site-packages/torch/utils/data/_utils/collate.py", line 162, in collate_tensor_fn
+    return torch.stack(batch, 0, out=out)
+RuntimeError: stack expects each tensor to be equal size, but got [179, 640] at entry 0 and [172, 640] at entry 108

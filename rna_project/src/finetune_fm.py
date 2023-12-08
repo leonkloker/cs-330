@@ -11,43 +11,39 @@ from torch.utils.tensorboard import SummaryWriter
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 
-from models.transformer import *
+from models.gru import *
 from data.dataloader import *
 from models.utils import *
 
 # Model parameters
-N_FEATURES = 640
-N_EMBEDDING = 512
-N_HEADS = 16
-N_FORWARD = 512
-N_ENC_LAYERS = 0
-N_DEC_LAYERS = 6
+D_FEATURES = 640
+D_MODEL = 256
+N_LAYERS = 4
 
 # Training parameters
 NUM_EPOCHS = 100
 LEARNING_RATE = 1e-3
 LEARNING_RATE_FT = 1e-6
 LAYERS_FT = [10, 11]
-BATCH_SIZE = 16
+BATCH_SIZE = 1
 
 # Load foundation model
 foundation_model, alphabet = fm.pretrained.rna_fm_t12()
-batch_converter = alphabet.get_batch_converter()
 
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
-name = 'finetune_layers{}_transformer_embed{}_enclayers{}_declayers{}_heads{}_foward{}_epochs{}_lr{:.0E}_{}'.format(
-            "_".join(str(i) for i in LAYERS_FT), N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, NUM_EPOCHS, LEARNING_RATE, date)
+name = 'finetune_gru_cnn_dim{}_layers{}_epochs{}_lr{:.0E}_{}'.format(
+            D_FEATURES, N_LAYERS, NUM_EPOCHS, LEARNING_RATE, date)
 
 # Initialize log file and tensorboard writer
 file = open("../outputs/logs/{}.txt".format(name), "w")
 writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
 # Initialize data loaders
-#data_dir = '../data/fm_embeddings/'
-#dataloader_train = DataLoader(DatasetEmbeddings(data_dir, mode='train'), batch_size=BATCH_SIZE, shuffle=True)
-#dataloader_val = DataLoader(DatasetEmbeddings(data_dir, mode='val'), batch_size=BATCH_SIZE, shuffle=True)
-#dataloader_test = DataLoader(DatasetEmbeddings(data_dir, mode='test'), batch_size=BATCH_SIZE, shuffle=True)
+data_dir = '../data/sequences/'
+dataloader_train = DataLoader(DatasetRNA(data_dir, mode='train', embedding=False), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(DatasetRNA(data_dir, mode='val', embedding=False), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(DatasetRNA(data_dir, mode='test', embedding=False), batch_size=BATCH_SIZE, shuffle=True)
 
 # Check if cuda is available
 if torch.cuda.is_available():
@@ -71,16 +67,16 @@ model_info = summary(foundation_model, input_size=[(BATCH_SIZE, 200, 1)])
 print(model_info, file=file)
 
 # Initialize model
-model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD)
-model = model.to(device)
-model_info = summary(model, input_size=[(BATCH_SIZE, 200, N_FEATURES), (BATCH_SIZE, 200, N_FEATURES)])
+gru = GRU(D_FEATURES, D_MODEL, N_LAYERS)
+gru = gru.to(device)
+model_info = summary(gru, input_size=(BATCH_SIZE, 200, 640))
 print(model_info, file=file)
 file.flush()
 
 # Initialize optimizer, scheduler, and loss function
 optimizer = optim.AdamW([{'params': params, 'lr': LEARNING_RATE_FT},
-                          {'params': model.parameters(), 'lr': LEARNING_RATE}])
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.6, patience=20, min_lr=1e-7)
+                          {'params': gru.parameters(), 'lr': LEARNING_RATE}])
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=10, min_lr=1e-7)
 cost = CustomMAEloss()
 val_loss_min = np.Inf
 
@@ -91,16 +87,20 @@ for epoch in range(NUM_EPOCHS):
         y1 = y1.to(device)
 
         optimizer.zero_grad()
-        yhat = model(x, x)
+        x = foundation_model(x)
+        yhat = gru(x).squeeze(-1)
+
         loss = cost(yhat, y1)
 
         # Backpropagation
         loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), 1)
+        nn.utils.clip_grad_norm_(gru.parameters(), 1)
+        nn.utils.clip_grad_norm_(params, 1)
         optimizer.step()
 
     # Validation
-    model.eval()
+    foundation_model.eval()
+    gru.eval()
     val_loss = 0
     pearson_avgs = []
     pearson_medians = []
@@ -110,7 +110,8 @@ for epoch in range(NUM_EPOCHS):
             x = x.to(device)
             y1 = y1.to(device)
 
-            yhat = model(x, x)
+            x = foundation_model(x)
+            yhat = gru(x).squeeze(-1)
             val_loss += cost(yhat, y1)
 
             pearson_avg, pearson_median = pearsonCorrelation(yhat, y1)
@@ -134,14 +135,15 @@ for epoch in range(NUM_EPOCHS):
 
     # Save model if validation loss is lower than previous minimum
     if val_loss < val_loss_min:
-        torch.save(model.state_dict(), 
-                   '../outputs/models/head_{}.pth'.format(name))
+        torch.save(gru.state_dict(), 
+                   '../outputs/models/{}_head.pth'.format(name))
         torch.save(foundation_model.state_dict(),
-                     '../outputs/models/foundation_{}.pth'.format(name))
+                     '../outputs/models/{}_fm.pth'.format(name))
         val_loss_min = val_loss
 
     # Update learning rate
-    model.train()
+    foundation_model.train()
+    gru.train()
     scheduler.step(val_loss)
     writer.add_scalar("learning_rate", optimizer.param_groups[0]['lr'], epoch)
 
@@ -150,8 +152,11 @@ print("\nEvaluating best model on test set", file=file)
 file.flush()
 
 # Load best model and evaluate on test set
-model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
-model.eval()
+foundation_model.load_state_dict(torch.load('../outputs/models/{}_fm.pth'.format(name)))
+gru.load_state_dict(torch.load('../outputs/models/{}_head.pth'.format(name)))
+foundation_model.eval()
+gru.eval()
+
 test_loss = 0
 pearson_avgs = []
 pearson_medians = []
@@ -160,7 +165,8 @@ with torch.no_grad():
         x = x.to(device)
         y1 = y1.to(device)
 
-        yhat = model(x, x)
+        x = foundation_model(x)
+        yhat = gru(x).squeeze(-1)
         test_loss += cost(yhat, y1)
 
         pearson_avg, pearson_median = pearsonCorrelation(yhat, y1)

@@ -13,6 +13,7 @@ else:
     device = torch.device("cpu")
 
 # Load model
+print("Loading model...")
 model, alphabet = fm.pretrained.rna_fm_t12()
 batch_converter = alphabet.get_batch_converter()
 model.to(device)
@@ -20,10 +21,10 @@ model.eval()
 
 # Load RNA data to be transformed
 print("Loading data...")
+df = pd.read_csv("../../../csv/train_data.csv")
 
-df = pd.read_csv("../../csv/train_data.csv")
-
-N = 64
+START = 0
+END = 128 * 10**3
 
 # Extract RNA sequences and labels
 print("Extracting RNA sequences and labels...")
@@ -39,9 +40,9 @@ y_1 = np.clip(y_1, 0, 1)
 y_2 = np.clip(y_2, 0, 1)
 
 # Cut to N samples
-x = x[:N]
-y_1 = y_1[:N]
-y_2 = y_2[:N]
+x = x[START:END]
+y_1 = y_1[START:END]
+y_2 = y_2[START:END]
 
 # Transform RNA sequences to embeddings
 print("Transforming RNA sequences to embeddings...")
@@ -50,17 +51,37 @@ for i in range(len(x)):
     data.append((str(i), x[i]))
 labels, strs, tokens = batch_converter(data)
 
+# Saving tokenized sequences and labels
+'''print("Saving tokenized sequences...")
+if not os.path.exists("../data/sequences"):
+    os.makedirs("../data/sequences")
+if not os.path.exists("../data/2A3_MaP"):
+    os.makedirs("../data/2A3_MaP")
+if not os.path.exists("../data/DMS_MaP"):
+    os.makedirs("../data/DMS_MaP")
+
+for i in range(START, END):
+    np.savez("../data/sequences/{}.npz".format(i), x=tokens[i - START])
+    np.savez("../data/2A3_MaP/{}.npz".format(i), x=y_1[i - START])
+    np.savez("../data/DMS_MaP/{}.npz".format(i), x=y_2[i - START])'''
+
 # Extract embeddings
 print("Extracting embeddings...")
-batch_size = 1024
+batch_size = 128
 embeddings = []
-for idx in range(int(np.ceil(N/batch_size))):
+for idx in range(int(np.ceil((END-START)/batch_size))):
+    print("Batch {} of {}".format(idx+1, int(np.ceil((END-START)/batch_size))))
+
     batch = tokens[idx*batch_size:(idx+1)*batch_size,:]
     batch = batch.to(device)
     with torch.no_grad():
         results = model(batch, repr_layers=[12])
-    batch_embeddings = results["representations"][12]
-    embeddings.append(batch_embeddings.cpu().numpy())
+    batch_embeddings = results["representations"][12].cpu().numpy()
+    embeddings.append(batch_embeddings)
+
+    del batch, results
+    torch.cuda.empty_cache()
+
 embeddings = np.concatenate(embeddings, axis=0)
 
 # Save embeddings
@@ -68,5 +89,5 @@ print("Saving embeddings...")
 if not os.path.exists("../data/fm_embeddings"):
     os.makedirs("../data/fm_embeddings")
 
-for i in tqdm.tqdm(range(N)):
-    np.savez("../data/fm_embeddings/{}.npz".format(i), x=embeddings[i,:,:], y1=y_1[i,:], y2=y_2[i,:])
+for i in tqdm.tqdm(range(END-START)):
+    np.savez("../data/fm_embeddings/{}.npz".format(i + START), x=embeddings[i])

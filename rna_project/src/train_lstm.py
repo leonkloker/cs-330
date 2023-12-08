@@ -16,7 +16,7 @@ from models.utils import *
 
 # Model parameters
 D_FEATURES = 640
-D_MODEL = 256
+D_MODEL = 128
 N_LAYERS = 3
 
 # Training parameters
@@ -56,7 +56,7 @@ file.flush()
 
 # Initialize optimizer, scheduler, and loss function
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.6, patience=20, min_lr=1e-7)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=5, min_lr=1e-7)
 cost = CustomMAEloss()
 val_loss_min = np.Inf
 
@@ -105,7 +105,7 @@ for epoch in range(NUM_EPOCHS):
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, learning rate: {optimizer.param_groups[0]['lr']}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, train MAE: {loss.item()}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val MAE: {val_loss}", file=file)
-    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val Pearson: {pearson_avg}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val Pearson: {pearson_median}", file=file)
     file.flush()
 
     # Save model if validation loss is lower than previous minimum

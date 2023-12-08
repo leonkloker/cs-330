@@ -9,7 +9,7 @@ class LSTM(nn.Module):
                             num_layers=n_layers, batch_first=True,
                             bidirectional=True, dropout=dropout)
 
-        self.fc = nn.Sequential(nn.Linear(d_model, 64),
+        self.fc = nn.Sequential(nn.Linear(2*d_model, 64),
                                       nn.Dropout(dropout),
                                       nn.GELU(),
                                       nn.Linear(64, 16),

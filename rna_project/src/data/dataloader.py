@@ -8,31 +8,44 @@ sys.path.insert(0, '../')
 
 from models.utils import *
 
-TRAIN_SPLIT = 0.8
-VAL_SPLIT = 0.1
-TEST_SPLIT = 0.1
+TRAIN_SPLIT = 0.9
+VAL_SPLIT = 0.05
+TEST_SPLIT = 0.05
 
-class DatasetEmbeddings(Dataset):
-    def __init__(self, root_dir, mode='train', N=0):
-        self.root_dir = root_dir
-        self.file_list = os.listdir(root_dir)
+class DatasetRNA(Dataset):
+    def __init__(self, root_dir, embedding=True, mode='train', N=0, secondary=False):
+        self.x_dir = root_dir
+        self.secondary = secondary
+
+        if embedding:
+            self.y1_dir = root_dir.replace("fm_embeddings", "2A3_MaP")
+            self.y2_dir = root_dir.replace("fm_embeddings", "DMS_MaP")
+            self.secondary_dir = root_dir.replace("fm_embeddings", "secondary")
+        else:
+            self.y1_dir = root_dir.replace("sequences", "2A3_MaP")
+            self.y2_dir = root_dir.replace("sequences", "DMS_MaP")
+            self.secondary_dir = root_dir.replace("sequences", "secondary")
+
+        self.x_list = os.listdir(self.x_dir)
+        self.y1_list = os.listdir(self.y1_dir)
+        self.y2_list = os.listdir(self.y2_dir)
         self.mode = mode
         
         if mode == 'train':
             if N == 0:
-                self.length = int(len(self.file_list) * TRAIN_SPLIT)
+                self.length = int(len(self.x_list) * TRAIN_SPLIT)
             else:
                 self.length = int(N * TRAIN_SPLIT)
         
         elif mode == 'val':
             if N == 0:
-                self.length = int(len(self.file_list) * VAL_SPLIT)
+                self.length = int(len(self.x_list) * VAL_SPLIT)
             else:
                 self.length = int(N * VAL_SPLIT)
 
         elif mode == 'test':
             if N == 0:
-                self.length = int(len(self.file_list) * TEST_SPLIT)
+                self.length = int(len(self.x_list) * TEST_SPLIT)
             else:
                 self.length = int(N * TEST_SPLIT)
 
@@ -45,8 +58,20 @@ class DatasetEmbeddings(Dataset):
         if self.mode == 'test':
             idx = idx + int((self.length / TEST_SPLIT) * (TRAIN_SPLIT + VAL_SPLIT))
 
-        npy_file = np.load(os.path.join(self.root_dir, self.file_list[idx]))
-        x = npy_file["x"]
-        y1 = npy_file["y1"][:x.shape[0]]
-        y2 = npy_file["y2"][:x.shape[0]]
+        x = np.load(os.path.join(self.x_dir, self.x_list[idx]))
+        y1 = np.load(os.path.join(self.y1_dir, self.y1_list[idx]))
+        y2 = np.load(os.path.join(self.y2_dir, self.y2_list[idx]))            
+
+        x = x["x"]
+
+        # Account for start token
+        y1 = np.insert(y1["x"][:x.shape[0]-1], 0, np.nan)
+        y2 = np.insert(y2["x"][:x.shape[0]-1], 0, np.nan)
+
+        if self.secondary:
+            second = np.load(os.path.join(self.secondary_dir, "{}.npz".format(idx)))
+            second = np.insert(second["x"][:x.shape[0]-1], 0, np.nan)
+            return x, y1, y2, second
+
         return x, y1, y2
+    
