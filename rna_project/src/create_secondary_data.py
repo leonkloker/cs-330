@@ -30,12 +30,16 @@ for file in file_list:
             continue
         idx = idx.index[0]
         data = secondary["vienna2_mfe"][i]
-        binary = []
+        binary = [np.nan]
         for char in data:
             if char == ".":
                 binary.append(0)
             else:
                 binary.append(1)
+                
+        while len(binary) < 208:
+            binary.append(np.nan)
+
         secondary_data.append([idx, binary])
 
 # Saving secondary structure data
@@ -46,4 +50,3 @@ for sample in secondary_data:
     idx = sample[0]
     binary = np.array(sample[1])
     np.savez("../data/secondary/{}.npz".format(idx), x=binary)
-        

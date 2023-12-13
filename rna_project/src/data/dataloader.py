@@ -63,15 +63,18 @@ class DatasetRNA(Dataset):
         y2 = np.load(os.path.join(self.y2_dir, self.y2_list[idx]))            
 
         x = x["x"]
-
-        # Account for start token
-        y1 = np.insert(y1["x"][:x.shape[0]-1], 0, np.nan)
-        y2 = np.insert(y2["x"][:x.shape[0]-1], 0, np.nan)
+        y1 = y1["x"][:x.shape[0]]
+        y2 = y2["x"][:x.shape[0]]
 
         if self.secondary:
-            second = np.load(os.path.join(self.secondary_dir, "{}.npz".format(idx)))
-            second = np.insert(second["x"][:x.shape[0]-1], 0, np.nan)
-            return x, y1, y2, second
+            file = os.path.join(self.secondary_dir, "{}.npz".format(idx))
+            if os.path.exists(file):
+                s = np.load(file)
+                s = s["x"][:x.shape[0]]
+            else:
+                s = np.full(y1.shape, np.nan)
+        else:
+            s = np.full(y1.shape, np.nan)
 
-        return x, y1, y2
+        return x, y1, y2, s
     

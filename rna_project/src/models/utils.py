@@ -3,6 +3,7 @@ import numpy as np
 import random
 import re
 import torch
+import torch.nn.functional as F
 
 from torch import nn
 from torch.utils.data import DataLoader, Subset
@@ -110,48 +111,6 @@ class PositionalEncodingLearned(nn.Module):
         x = x + self.linear(self.linear_pos_encoding.pos_encoding)[:x.size(-2), :]
         return self.dropout(x)
 
-class Time2Vec(nn.Module):
-    def __init__(self, k, dropout=0.0):
-        super(Time2Vec, self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        self.linear = nn.Linear(1, k)
-
-    def forward(self, x, t=[]):
-        if len(t) == 0:
-            t = torch.arange(x.size(-2), dtype=torch.float32).unsqueeze(-1)
-        else:
-            t = torch.tensor(t, dtype=torch.float32).unsqueeze(-1)
-
-        t = t.to(x.device)
-        t = self.linear(t)
-        t = torch.cat([t[:, 0].unsqueeze(-1), torch.sin(t[:, 1:])], dim=-1)
-        t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
-        x = torch.cat([x, t], dim=-1)
-        return x
-    
-class RelativeL2Loss(nn.Module):
-    def __init__(self):
-        super(RelativeL2Loss, self).__init__()
-
-    def forward(self, prediction, ground_truth, avg_dim=[0]):
-        dims = set([i for i in range(len(prediction.shape))])
-        for dim in avg_dim:
-            dims.remove(dim)
-        dims = tuple(dims)
-        
-        l2_error = torch.linalg.vector_norm(prediction - ground_truth, ord=2, dim=dims)
-        l2_norm = torch.linalg.vector_norm(ground_truth, ord=2, dim=dims)
-        loss = torch.mean(l2_error / l2_norm)
-        return loss
-    
-class MSEloss(nn.Module):
-    def __init__(self):
-        super(MSEloss, self).__init__()
-
-    def forward(self, prediction, ground_truth):
-        loss = torch.mean((prediction - ground_truth)**2)
-        return loss
-
 class CustomMAEloss(nn.Module):
     def __init__(self):
         super(CustomMAEloss, self).__init__()
@@ -159,9 +118,19 @@ class CustomMAEloss(nn.Module):
     def forward(self, prediction, ground_truth):
         loss = torch.nanmean(torch.abs(prediction - ground_truth))
         return loss
+
+class CustomBCEloss(nn.Module):
+    def __init__(self):
+        super(CustomBCEloss, self).__init__()
+
+    def forward(self, inputs, targets):
+        mask = ~torch.isnan(targets) & ~torch.isnan(inputs)
+        filtered_inputs = inputs[mask]
+        filtered_targets = targets[mask]
+        loss = F.binary_cross_entropy_with_logits(filtered_inputs, filtered_targets)
+        return loss
     
 def pearsonCorrelation(prediction, ground_truth):
-    
     if ground_truth.dim() == 1:
         nan_mask = ~torch.isnan(ground_truth)
         pearson_avg = torch.corrcoef(torch.stack([prediction[nan_mask], ground_truth[nan_mask]]))[0, 1]
@@ -182,42 +151,3 @@ def get_random_subset_loader(dataset, batch_size, subset_fraction=0.1):
     subset = Subset(dataset, subset_indices)
     loader = DataLoader(subset, batch_size=batch_size, shuffle=True)
     return loader
-
-def create_subdomain_sample_from_centers(centers):
-    new_sample = np.zeros((64, centers.shape[1] * 5), dtype=np.float32)
-    for i in range(64):
-        center = centers[i, :]
-        
-        if i >= 8:
-            top = centers[i-8, :]
-        else:
-            top = np.zeros_like(center)
-            
-        if i < 56:
-            bottom = centers[i+8, :]
-        else:
-            bottom = np.zeros_like(center)
-            
-        if i % 8 != 0:
-            left = centers[i-1, :]
-        else:
-            left = np.zeros_like(center)
-            
-        if (i+1) % 8 != 0:
-            right = centers[i+1, :]
-        else:
-            right = np.zeros_like(center)
-            
-        new_sample[i, :] = np.concatenate((center, top, right, bottom, left))
-        
-    return new_sample
-
-def extract_number(filename):
-    match = re.search(r'(\d+)', filename)
-    if match:
-        return int(match.group(1))
-    return 0
-
-def get_window_size(nenc, ndec, enc_window, dec_window, mem_window):
-    return max(nenc * (enc_window - 1) + mem_window - 1, dec_window - 1,
-                    nenc * (enc_window - 1) + mem_window - 1 + (dec_window - 1) * (ndec - 1))

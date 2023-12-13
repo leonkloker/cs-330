@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchinfo import summary
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.tensorboard import SummaryWriter
 
 torch.manual_seed(42)
@@ -17,23 +18,28 @@ from models.utils import *
 
 # Model parameters
 D_FEATURES = 640
-D_MODEL = 256
-N_LAYERS = 4
+D_MODEL = 192
+N_LAYERS = 3
 
 # Training parameters
 NUM_EPOCHS = 100
 LEARNING_RATE = 1e-3
-LEARNING_RATE_FT = 1e-6
+LEARNING_RATE_FT = 5e-5
 LAYERS_FT = [10, 11]
-BATCH_SIZE = 1
+BATCH_SIZE = 96
 
 # Load foundation model
 foundation_model, alphabet = fm.pretrained.rna_fm_t12()
+def fm_forward(x):
+    x = foundation_model.embed_tokens(x)
+    for layer in foundation_model.layers:
+        x, _ = layer(x)
+    return x
 
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
-name = 'finetune_gru_cnn_dim{}_layers{}_epochs{}_lr{:.0E}_{}'.format(
-            D_FEATURES, N_LAYERS, NUM_EPOCHS, LEARNING_RATE, date)
+name = 'finetune{}_gru_dim{}_layers{}_epochs{}_lr{:.0E}_{}'.format(
+            "_".join(str(i) for i in LAYERS_FT), D_FEATURES, N_LAYERS, NUM_EPOCHS, LEARNING_RATE, date)
 
 # Initialize log file and tensorboard writer
 file = open("../outputs/logs/{}.txt".format(name), "w")
@@ -55,16 +61,15 @@ else:
 
 # Finetune layers
 params = []
-for name, param in foundation_model.named_parameters():
-    if any([str(layer) in name for layer in LAYERS_FT]):
+for string, param in foundation_model.named_parameters():
+    if any([str(layer) in string for layer in LAYERS_FT]):
         param.requires_grad = True
         params.append(param)
     else:
         param.requires_grad = False
 
 foundation_model = foundation_model.to(device)
-model_info = summary(foundation_model, input_size=[(BATCH_SIZE, 200, 1)])
-print(model_info, file=file)
+print(foundation_model, file=file)
 
 # Initialize model
 gru = GRU(D_FEATURES, D_MODEL, N_LAYERS)
@@ -76,26 +81,27 @@ file.flush()
 # Initialize optimizer, scheduler, and loss function
 optimizer = optim.AdamW([{'params': params, 'lr': LEARNING_RATE_FT},
                           {'params': gru.parameters(), 'lr': LEARNING_RATE}])
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=10, min_lr=1e-7)
+scheduler = OneCycleLR(optimizer, max_lr=[10*LEARNING_RATE_FT, 10*LEARNING_RATE], epochs=NUM_EPOCHS, steps_per_epoch=len(dataloader_train))
 cost = CustomMAEloss()
 val_loss_min = np.Inf
 
 # Training loop
 for epoch in range(NUM_EPOCHS):
     for x, y1, y2 in dataloader_train:
+        x = x.int()
         x = x.to(device)
         y1 = y1.to(device)
 
         optimizer.zero_grad()
-        x = foundation_model(x)
-        yhat = gru(x).squeeze(-1)
 
+        x = fm_forward(x)  
+        yhat = gru(x).squeeze(-1)
         loss = cost(yhat, y1)
 
         # Backpropagation
         loss.backward()
-        nn.utils.clip_grad_norm_(gru.parameters(), 1)
-        nn.utils.clip_grad_norm_(params, 1)
+        nn.utils.clip_grad_norm_(gru.parameters(), 5)
+        nn.utils.clip_grad_norm_(params, 5)
         optimizer.step()
 
     # Validation
@@ -107,10 +113,11 @@ for epoch in range(NUM_EPOCHS):
 
     with torch.no_grad():
         for x, y1, y2 in dataloader_val:
+            x = x.int()
             x = x.to(device)
             y1 = y1.to(device)
 
-            x = foundation_model(x)
+            x = fm_forward(x)
             yhat = gru(x).squeeze(-1)
             val_loss += cost(yhat, y1)
 
@@ -127,7 +134,7 @@ for epoch in range(NUM_EPOCHS):
     writer.add_scalar("MAE/val", val_loss, epoch)
     writer.add_scalar("Pearson/val_avg", pearson_avg, epoch)
     writer.add_scalar("Pearson/val_median", pearson_median, epoch)
-    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, learning rate: {optimizer.param_groups[0]['lr']}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, learning rate: {optimizer.param_groups[1]['lr']}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, train MAE: {loss.item()}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val MAE: {val_loss}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val Pearson: {pearson_avg}", file=file)
@@ -144,8 +151,8 @@ for epoch in range(NUM_EPOCHS):
     # Update learning rate
     foundation_model.train()
     gru.train()
-    scheduler.step(val_loss)
-    writer.add_scalar("learning_rate", optimizer.param_groups[0]['lr'], epoch)
+    scheduler.step()
+    writer.add_scalar("learning_rate", optimizer.param_groups[1]['lr'], epoch)
 
 print("Training finished", file=file)
 print("\nEvaluating best model on test set", file=file)
@@ -162,10 +169,11 @@ pearson_avgs = []
 pearson_medians = []
 with torch.no_grad():
     for x, y1, y2 in dataloader_test:
+        x = x.int()
         x = x.to(device)
         y1 = y1.to(device)
 
-        x = foundation_model(x)
+        x = fm_forward(x)
         yhat = gru(x).squeeze(-1)
         test_loss += cost(yhat, y1)
 
@@ -185,3 +193,4 @@ print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test MAE: {val_loss}", file=file)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test average Pearson: {pearson_avg}", file=file)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test median Pearson: {pearson_median}", file=file)
 file.flush()
+

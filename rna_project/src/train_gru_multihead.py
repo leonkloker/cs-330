@@ -15,10 +15,10 @@ from data.dataloader import *
 from models.utils import *
 
 # Model parameters
-D_FEATURES = 1
+D_FEATURES = 640
 D_MODEL = 128
 N_LAYERS = 4
-N_HEADS = 2
+N_HEADS = 3
 
 # Training parameters
 NUM_EPOCHS = 100
@@ -27,18 +27,18 @@ BATCH_SIZE = 128
 
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
-name = 'gru_cnn_heads{}_feat{}_dim{}_layers{}_epochs{}_lr{:.0E}_{}'.format(
-            N_HEADS, D_FEATURES, D_MODEL, N_LAYERS, NUM_EPOCHS, LEARNING_RATE, date)
+name = 'gru_cnn_heads{}_dim{}_layers{}_epochs{}_lr{:.0E}_{}'.format(
+            N_HEADS, D_FEATURES, N_LAYERS, NUM_EPOCHS, LEARNING_RATE, date)
 
 # Initialize log file and tensorboard writer
 file = open("../outputs/logs/{}.txt".format(name), "w")
 writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
 # Initialize data loaders
-data_dir = '../data/sequences/'
-dataloader_train = DataLoader(DatasetRNA(data_dir, mode='train', secondary=False), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(DatasetRNA(data_dir, mode='val', secondary=False), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_test = DataLoader(DatasetRNA(data_dir, mode='test', secondary=False), batch_size=BATCH_SIZE, shuffle=True)
+data_dir = '../data/fm_embeddings/'
+dataloader_train = DataLoader(DatasetRNA(data_dir, mode='train', secondary=True), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(DatasetRNA(data_dir, mode='val', secondary=True), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(DatasetRNA(data_dir, mode='test', secondary=True), batch_size=BATCH_SIZE, shuffle=True)
 
 # Check if cuda is available
 if torch.cuda.is_available():
@@ -49,30 +49,32 @@ else:
     print("Using CPU", file=file)
 
 # Initialize model
-model = GRU(D_FEATURES, D_MODEL, N_LAYERS, n_heads=N_HEADS, embedding=True)
+model = GRU(D_FEATURES, D_MODEL, N_LAYERS, n_heads=N_HEADS)
 model = model.to(device)
-model_info = summary(model, input_size=(BATCH_SIZE, 200))
+model_info = summary(model, input_size=(BATCH_SIZE, 200, D_FEATURES))
 print(model_info, file=file)
 file.flush()
 
 # Initialize optimizer, scheduler, and loss function
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5, min_lr=1e-7)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=5, min_lr=1e-7)
 cost1 = CustomMAEloss()
 cost2 = CustomBCEloss()
 val_loss_min = np.Inf
 
 # Training loop
 for epoch in range(NUM_EPOCHS):
-    for x, y1, y2 in dataloader_train:
+    for x, y1, y2, s in dataloader_train:
         x = x.to(device)
         y1 = y1.to(device)
         y2 = y2.to(device)
+        s = s.to(device)
 
         optimizer.zero_grad()
         yhat = model(x)
         loss = cost1(yhat[0], y1)
         loss += cost1(yhat[1], y2)
+        loss += cost2(yhat[2], s)
 
         # Backpropagation
         loss.backward()
@@ -84,21 +86,24 @@ for epoch in range(NUM_EPOCHS):
     val_loss = 0
     val_loss1 = 0
     val_loss2 = 0
+    val_losss = 0
     pearson_avgs1 = []
     pearson_medians1 = []
     pearson_avgs2 = []
     pearson_medians2 = []
 
     with torch.no_grad():
-        for x, y1, y2 in dataloader_val:
+        for x, y1, y2, s in dataloader_val:
             x = x.to(device)
             y1 = y1.to(device)
             y2 = y2.to(device)
+            s = s.to(device)
 
             yhat = model(x)
             val_loss1 += cost1(yhat[0], y1)
             val_loss2 += cost1(yhat[1], y2)
-            val_loss += val_loss1 + val_loss2
+            val_losss += cost2(yhat[2], s)
+            val_loss += val_loss1 + val_loss2 + val_losss
 
             pearson_avg, pearson_median = pearsonCorrelation(yhat[0], y1)
             pearson_avgs1.append(pearson_avg)
@@ -111,6 +116,7 @@ for epoch in range(NUM_EPOCHS):
     val_loss = val_loss / len(dataloader_val)
     val_loss1 = val_loss1 / len(dataloader_val)
     val_loss2 = val_loss2 / len(dataloader_val)
+    val_losss = val_losss / len(dataloader_val)
     pearson_avg1 = torch.mean(torch.stack(pearson_avgs1))
     pearson_median1 = torch.median(torch.stack(pearson_medians1))
     pearson_avg2 = torch.mean(torch.stack(pearson_avgs2))
@@ -121,6 +127,7 @@ for epoch in range(NUM_EPOCHS):
     writer.add_scalar("Loss/val", val_loss, epoch)
     writer.add_scalar("MAE/val1", val_loss1, epoch)
     writer.add_scalar("MAE/val2", val_loss2, epoch)
+    writer.add_scalar("BCE/val", val_losss, epoch)
     writer.add_scalar("Pearson/val_avg1", pearson_avg1, epoch)
     writer.add_scalar("Pearson/val_median1", pearson_median1, epoch)
     writer.add_scalar("Pearson/val_avg2", pearson_avg2, epoch)
@@ -130,6 +137,7 @@ for epoch in range(NUM_EPOCHS):
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val loss: {val_loss}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val MAE 1: {val_loss1}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val MAE 2: {val_loss2}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val BCE: {val_losss}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val Pearson 1: {pearson_median1}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val Pearson 2: {pearson_median2}", file=file)
     file.flush()
@@ -155,20 +163,23 @@ model.eval()
 test_loss = 0
 test_loss1 = 0
 test_loss2 = 0
+test_losss = 0
 pearson_avgs1 = []
 pearson_medians1 = []
 pearson_avgs2 = []
 pearson_medians2 = []
 with torch.no_grad():
-    for x, y1, y2 in dataloader_test:
+    for x, y1, y2, s in dataloader_test:
         x = x.to(device)
         y1 = y1.to(device)
         y2 = y2.to(device)
+        s = s.to(device)
 
         yhat = model(x)
         test_loss1 += cost1(yhat[0], y1)
         test_loss2 += cost1(yhat[1], y2)
-        test_loss += test_loss1 + test_loss2
+        test_losss += cost2(yhat[2], s)
+        test_loss += test_loss1 + test_loss2 + test_losss
 
         pearson_avg, pearson_median = pearsonCorrelation(yhat[0], y1)
         pearson_avgs1.append(pearson_avg)
@@ -180,6 +191,7 @@ with torch.no_grad():
 test_loss = test_loss / len(dataloader_test)
 test_loss1 = test_loss1 / len(dataloader_test)
 test_loss2 = test_loss2 / len(dataloader_test)
+test_losss = test_losss / len(dataloader_test)
 pearson_avg1 = torch.mean(torch.stack(pearson_avgs1))
 pearson_median1 = torch.median(torch.stack(pearson_medians1))
 pearson_avg2 = torch.mean(torch.stack(pearson_avgs2))
@@ -189,6 +201,7 @@ pearson_median2 = torch.median(torch.stack(pearson_medians2))
 writer.add_scalar("Loss/test", test_loss, epoch)
 writer.add_scalar("MAE/test1", test_loss1, epoch)
 writer.add_scalar("MAE/test2", test_loss2, epoch)
+writer.add_scalar("BCE/test", test_losss, epoch)
 writer.add_scalar("Pearson/test_avg1", pearson_avg1, epoch)
 writer.add_scalar("Pearson/test_median1", pearson_median1, epoch)
 writer.add_scalar("Pearson/test_avg2", pearson_avg2, epoch)
@@ -197,6 +210,7 @@ writer.add_scalar("Pearson/test_median2", pearson_median2, epoch)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test loss: {test_loss}", file=file)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test MAE 1: {test_loss1}", file=file)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test MAE 2: {test_loss2}", file=file)
+print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test BCE: {test_losss}", file=file)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test Pearson 1: {pearson_median1}", file=file)
 print(f"Epoch {epoch+1} / {NUM_EPOCHS}, test Pearson 2: {pearson_median2}", file=file)
 file.flush()
