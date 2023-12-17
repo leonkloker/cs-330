@@ -215,7 +215,7 @@ if __name__ == "__main__":
     csv_data = [args.run_name, maml_time, maml_memory, es_time, es_memory]
     output_path = f"results/{args.experiment_name}.csv"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "a", newline="") as f:
+    with open(output_path,x "a", newline="") as f:
         writer = csv.writer(f, delimiter=",")
         if os.stat(output_path).st_size == 0:
             column_names = [
